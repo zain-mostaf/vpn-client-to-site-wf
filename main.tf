@@ -111,18 +111,21 @@ resource "ibm_iam_authorization_policy" "vpn_to_sm" {
 
 ###############################################################################
 # 6. TLS CERTIFICATE GENERATION (Terraform tls provider)
-#    Generates a self-signed CA, then issues server + client CA certificates.
-#    Both are stored in IBM Secrets Manager as imported certificates.
+#    Two-tier PKI:
+#      Root CA  → self-signed, issues only the Intermediate CA certificate.
+#      Intermediate CA → signed by Root CA, issues server & client CA certs.
+#    Both leaf certificates are stored in IBM Secrets Manager as imported certs.
+#    The chain presented to IBM VPN is: leaf → Intermediate CA → Root CA.
 ###############################################################################
 
-# ── Root CA private key & self-signed certificate ───────────────────────────
-resource "tls_private_key" "ca_key" {
+# ── Root CA — private key & self-signed certificate ─────────────────────────
+resource "tls_private_key" "root_ca_key" {
   algorithm = "RSA"
   rsa_bits  = 4096
 }
 
-resource "tls_self_signed_cert" "ca_cert" {
-  private_key_pem = tls_private_key.ca_key.private_key_pem
+resource "tls_self_signed_cert" "root_ca_cert" {
+  private_key_pem = tls_private_key.root_ca_key.private_key_pem
 
   subject {
     common_name  = "VPN Root CA — ${var.cert_common_name}"
@@ -140,7 +143,42 @@ resource "tls_self_signed_cert" "ca_cert" {
   ]
 }
 
-# ── VPN Server private key & certificate signed by CA ───────────────────────
+# ── Intermediate CA — private key, CSR, & certificate signed by Root CA ─────
+resource "tls_private_key" "intermediate_ca_key" {
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}
+
+resource "tls_cert_request" "intermediate_ca_csr" {
+  private_key_pem = tls_private_key.intermediate_ca_key.private_key_pem
+
+  subject {
+    common_name  = "VPN Intermediate CA — ${var.cert_common_name}"
+    organization = var.cert_organization
+  }
+}
+
+resource "tls_locally_signed_cert" "intermediate_ca_cert" {
+  cert_request_pem      = tls_cert_request.intermediate_ca_csr.cert_request_pem
+  ca_private_key_pem    = tls_private_key.root_ca_key.private_key_pem
+  ca_cert_pem           = tls_self_signed_cert.root_ca_cert.cert_pem
+  validity_period_hours = var.cert_validity_hours
+  is_ca_certificate     = true
+
+  allowed_uses = [
+    "key_encipherment",
+    "digital_signature",
+    "cert_signing",
+    "crl_signing",
+  ]
+}
+
+# Full chain PEM: Intermediate CA + Root CA (used as the 'intermediate' bundle)
+locals {
+  ca_chain_pem = "${tls_locally_signed_cert.intermediate_ca_cert.cert_pem}${tls_self_signed_cert.root_ca_cert.cert_pem}"
+}
+
+# ── VPN Server — private key & certificate signed by Intermediate CA ─────────
 resource "tls_private_key" "server_key" {
   algorithm = "RSA"
   rsa_bits  = 4096
@@ -157,8 +195,8 @@ resource "tls_cert_request" "server_csr" {
 
 resource "tls_locally_signed_cert" "server_cert" {
   cert_request_pem      = tls_cert_request.server_csr.cert_request_pem
-  ca_private_key_pem    = tls_private_key.ca_key.private_key_pem
-  ca_cert_pem           = tls_self_signed_cert.ca_cert.cert_pem
+  ca_private_key_pem    = tls_private_key.intermediate_ca_key.private_key_pem
+  ca_cert_pem           = tls_locally_signed_cert.intermediate_ca_cert.cert_pem
   validity_period_hours = var.cert_validity_hours
 
   allowed_uses = [
@@ -168,7 +206,7 @@ resource "tls_locally_signed_cert" "server_cert" {
   ]
 }
 
-# ── Client CA private key & certificate signed by Root CA ───────────────────
+# ── Client CA — private key & CA certificate signed by Intermediate CA ───────
 resource "tls_private_key" "client_ca_key" {
   algorithm = "RSA"
   rsa_bits  = 4096
@@ -185,8 +223,8 @@ resource "tls_cert_request" "client_ca_csr" {
 
 resource "tls_locally_signed_cert" "client_ca_cert" {
   cert_request_pem      = tls_cert_request.client_ca_csr.cert_request_pem
-  ca_private_key_pem    = tls_private_key.ca_key.private_key_pem
-  ca_cert_pem           = tls_self_signed_cert.ca_cert.cert_pem
+  ca_private_key_pem    = tls_private_key.intermediate_ca_key.private_key_pem
+  ca_cert_pem           = tls_locally_signed_cert.intermediate_ca_cert.cert_pem
   validity_period_hours = var.cert_validity_hours
   is_ca_certificate     = true
 
@@ -199,6 +237,7 @@ resource "tls_locally_signed_cert" "client_ca_cert" {
 }
 
 # ── Store Server Certificate in Secrets Manager ──────────────────────────────
+# intermediate field carries the full chain: Intermediate CA + Root CA
 resource "ibm_sm_imported_certificate" "vpn_server_cert" {
   instance_id     = ibm_resource_instance.secrets_manager.guid
   region          = var.region
@@ -207,14 +246,15 @@ resource "ibm_sm_imported_certificate" "vpn_server_cert" {
   labels          = ["vpn", "server-cert"]
   secret_group_id = "default"
 
-  certificate     = tls_locally_signed_cert.server_cert.cert_pem
-  private_key     = tls_private_key.server_key.private_key_pem
-  intermediate    = tls_self_signed_cert.ca_cert.cert_pem
+  certificate  = tls_locally_signed_cert.server_cert.cert_pem
+  private_key  = tls_private_key.server_key.private_key_pem
+  intermediate = local.ca_chain_pem
 
-  depends_on      = [time_sleep.wait_for_secrets_manager]
+  depends_on = [time_sleep.wait_for_secrets_manager]
 }
 
-# ── Store Client CA Certificate in Secrets Manager ──────────────────────────
+# ── Store Client CA Certificate in Secrets Manager ───────────────────────────
+# intermediate field carries the full chain: Intermediate CA + Root CA
 resource "ibm_sm_imported_certificate" "vpn_client_ca_cert" {
   instance_id     = ibm_resource_instance.secrets_manager.guid
   region          = var.region
@@ -223,11 +263,11 @@ resource "ibm_sm_imported_certificate" "vpn_client_ca_cert" {
   labels          = ["vpn", "client-ca"]
   secret_group_id = "default"
 
-  certificate     = tls_locally_signed_cert.client_ca_cert.cert_pem
-  private_key     = tls_private_key.client_ca_key.private_key_pem
-  intermediate    = tls_self_signed_cert.ca_cert.cert_pem
+  certificate  = tls_locally_signed_cert.client_ca_cert.cert_pem
+  private_key  = tls_private_key.client_ca_key.private_key_pem
+  intermediate = local.ca_chain_pem
 
-  depends_on      = [time_sleep.wait_for_secrets_manager]
+  depends_on = [time_sleep.wait_for_secrets_manager]
 }
 
 ###############################################################################

@@ -165,7 +165,7 @@ After `terraform apply`, the following values populate your OpenVPN client profi
 ```
 remote  <vpn_server_hostname>  443  udp
 auth-user-pass            # IBMid username + passcode
-ca      <root_ca_cert.pem>     # From output: root_ca_certificate_pem
+ca      <ca_chain.pem>         # From output: ca_chain_pem (Intermediate CA + Root CA)
 cert    <client_cert.pem>      # Client certificate signed by client CA
 key     <client_key.pem>       # Client private key
 ```
@@ -175,9 +175,15 @@ Get the hostname:
 terraform output vpn_server_hostname
 ```
 
-Get the root CA certificate (save to `ca.pem` for client trust):
+Get the full CA chain (Intermediate CA + Root CA) for client trust:
 ```bash
-terraform output -raw root_ca_certificate_pem > ca.pem
+terraform output -raw ca_chain_pem > ca_chain.pem
+```
+
+Get individual CA certs if needed:
+```bash
+terraform output -raw root_ca_certificate_pem     > root_ca.pem
+terraform output -raw intermediate_ca_certificate_pem > intermediate_ca.pem
 ```
 
 ---

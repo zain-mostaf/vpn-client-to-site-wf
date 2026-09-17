@@ -78,8 +78,20 @@ output "vpn_client_ca_certificate_crn" {
 }
 
 output "root_ca_certificate_pem" {
-  description = "Root CA certificate in PEM format. Distribute to VPN clients for trust chain."
-  value       = tls_self_signed_cert.ca_cert.cert_pem
+  description = "Root CA certificate in PEM format (top of the trust chain)."
+  value       = tls_self_signed_cert.root_ca_cert.cert_pem
+  sensitive   = true
+}
+
+output "intermediate_ca_certificate_pem" {
+  description = "Intermediate CA certificate in PEM format (signed by Root CA, signs leaf certs)."
+  value       = tls_locally_signed_cert.intermediate_ca_cert.cert_pem
+  sensitive   = true
+}
+
+output "ca_chain_pem" {
+  description = "Full CA chain PEM (Intermediate CA + Root CA). Distribute to VPN clients for full trust verification."
+  value       = local.ca_chain_pem
   sensitive   = true
 }
 
