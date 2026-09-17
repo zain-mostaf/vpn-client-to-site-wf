@@ -43,7 +43,14 @@ secrets_manager_name = "vpn-secrets-manager"
 secrets_manager_plan = "standard"   # "standard" or "trial"
 
 ###############################################################################
-# 6. Certificates
+# 6. Private Certificate Engine — names visible in UI under Secret Engines
+###############################################################################
+root_ca_name         = "vpn-root-ca"
+intermediate_ca_name = "vpn-intermediate-ca"
+cert_template_name   = "vpn-cert-template"
+
+###############################################################################
+# Certificate subject fields
 ###############################################################################
 cert_common_name    = "vpn.wf.ibmcloud"
 cert_organization   = "Wells Fargo Grid-aaS"

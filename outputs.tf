@@ -68,31 +68,28 @@ output "secrets_manager_crn" {
 # Certificates
 ###############################################################################
 output "vpn_server_certificate_crn" {
-  description = "CRN of the VPN server TLS certificate stored in Secrets Manager."
-  value       = ibm_sm_imported_certificate.vpn_server_cert.crn
+  description = "CRN of the VPN server private certificate stored in Secrets Manager."
+  value       = ibm_sm_private_certificate.vpn_server_cert.crn
 }
 
 output "vpn_client_ca_certificate_crn" {
-  description = "CRN of the VPN client CA certificate stored in Secrets Manager."
-  value       = ibm_sm_imported_certificate.vpn_client_ca_cert.crn
+  description = "CRN of the VPN client CA private certificate stored in Secrets Manager."
+  value       = ibm_sm_private_certificate.vpn_client_ca_cert.crn
 }
 
-output "root_ca_certificate_pem" {
-  description = "Root CA certificate in PEM format (top of the trust chain)."
-  value       = tls_self_signed_cert.root_ca_cert.cert_pem
-  sensitive   = true
+output "root_ca_name" {
+  description = "Name of the Root CA configuration in the Secrets Manager Private Certificate engine."
+  value       = ibm_sm_private_certificate_configuration_root_ca.root_ca.name
 }
 
-output "intermediate_ca_certificate_pem" {
-  description = "Intermediate CA certificate in PEM format (signed by Root CA, signs leaf certs)."
-  value       = tls_locally_signed_cert.intermediate_ca_cert.cert_pem
-  sensitive   = true
+output "intermediate_ca_name" {
+  description = "Name of the Intermediate CA configuration in the Secrets Manager Private Certificate engine."
+  value       = ibm_sm_private_certificate_configuration_intermediate_ca.intermediate_ca.name
 }
 
-output "ca_chain_pem" {
-  description = "Full CA chain PEM (Intermediate CA + Root CA). Distribute to VPN clients for full trust verification."
-  value       = local.ca_chain_pem
-  sensitive   = true
+output "cert_template_name" {
+  description = "Name of the certificate template in the Secrets Manager Private Certificate engine."
+  value       = ibm_sm_private_certificate_configuration_template.vpn_cert_template.name
 }
 
 ###############################################################################
