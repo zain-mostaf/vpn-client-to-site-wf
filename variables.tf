@@ -132,9 +132,9 @@ variable "cert_ca_validity_hours" {
 }
 
 variable "cert_validity_hours" {
-  description = "Validity period for issued leaf certificates (server cert, client CA cert) in hours (default 2 years = 17520 h). Must be shorter than cert_ca_validity_hours."
+  description = "Validity period for issued leaf certificates (server cert, client CA cert) in hours (default 90 days = 2160 h). Must be shorter than cert_ca_validity_hours."
   type        = number
-  default     = 17520
+  default     = 2160
 }
 
 ###############################################################################
