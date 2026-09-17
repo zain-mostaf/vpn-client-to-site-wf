@@ -76,6 +76,9 @@ resource "ibm_resource_instance" "secrets_manager" {
   plan              = var.secrets_manager_plan
   location          = var.region
   service_endpoints = "public-and-private"
+  parameters = {
+    "service-endpoints" = "public-and-private"
+  }
   resource_group_id = ibm_resource_group.vpn_rg.id
   tags              = var.tags
 
@@ -88,7 +91,7 @@ resource "ibm_resource_instance" "secrets_manager" {
 # Allow DNS propagation and Secrets Manager instance initialization
 resource "time_sleep" "wait_for_secrets_manager" {
   depends_on      = [ibm_resource_instance.secrets_manager]
-  create_duration = "60s"
+  create_duration = "120s"
 }
 
 ###############################################################################
@@ -201,6 +204,7 @@ resource "ibm_sm_imported_certificate" "vpn_server_cert" {
   name            = "vpn-server-certificate"
   description     = "VPN Server TLS certificate used by the Client-to-Site VPN server"
   labels          = ["vpn", "server-cert"]
+  secret_group_id = "default"
 
   certificate     = tls_locally_signed_cert.server_cert.cert_pem
   private_key     = tls_private_key.server_key.private_key_pem
@@ -216,6 +220,7 @@ resource "ibm_sm_imported_certificate" "vpn_client_ca_cert" {
   name            = "vpn-client-ca-certificate"
   description     = "Client CA certificate used to authenticate VPN clients"
   labels          = ["vpn", "client-ca"]
+  secret_group_id = "default"
 
   certificate     = tls_locally_signed_cert.client_ca_cert.cert_pem
   private_key     = tls_private_key.client_ca_key.private_key_pem
