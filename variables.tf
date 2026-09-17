@@ -183,11 +183,11 @@ variable "vpn_routes" {
   default = [
     {
       name        = "vpc-private-subnet-1"
-      destination = "10.240.0.0/24"
+      destination = "192.0.2.0/24"
     },
     {
       name        = "vpc-private-subnet-2"
-      destination = "10.240.1.0/24"
+      destination = "192.0.2.0/24"
     }
   ]
 }
