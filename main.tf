@@ -118,14 +118,13 @@ resource "ibm_iam_authorization_policy" "vpn_to_sm" {
 #
 #  Provisioning order:
 #    Step 1  ibm_sm_private_certificate_configuration_root_ca
-#              — creates the self-signed Root CA inside SM
+#              — self-signed Root CA inside SM
 #    Step 2  ibm_sm_private_certificate_configuration_intermediate_ca
-#              — creates the Intermediate CA as an unsigned CSR inside SM
-#    Step 3  ibm_sm_private_certificate_configuration_action_sign_intermediate
-#              — Root CA signs the Intermediate CA CSR (completes the chain)
-#    Step 4  ibm_sm_private_certificate_configuration_template
+#              — Intermediate CA; signing_method="internal" + issuer=root_ca
+#                causes SM to sign it with the Root CA automatically
+#    Step 3  ibm_sm_private_certificate_configuration_template
 #              — certificate template attached to the Intermediate CA
-#    Step 5  ibm_sm_private_certificate  (x2)
+#    Step 4  ibm_sm_private_certificate  (x2)
 #              — issues the VPN Server cert and the VPN Client CA cert
 ###############################################################################
 
@@ -144,35 +143,25 @@ resource "ibm_sm_private_certificate_configuration_root_ca" "root_ca" {
   depends_on = [time_sleep.wait_for_secrets_manager]
 }
 
-# ── STEP 2 — Intermediate CA (unsigned CSR) ───────────────────────────────────
-# Creates the Intermediate CA in SM as an unsigned CSR.
-# It becomes fully operational only after Step 3 signs it.
+# ── STEP 2 — Intermediate CA ──────────────────────────────────────────────────
+# signing_method = "internal" tells SM to sign the Intermediate CA CSR with the
+# Root CA named in "issuer" — no external signing action is needed.
 # Visible in UI: Secret Engines > Private Certificates > vpn-intermediate-ca
 resource "ibm_sm_private_certificate_configuration_intermediate_ca" "intermediate_ca" {
   instance_id  = ibm_resource_instance.secrets_manager.guid
   region       = var.region
   name         = var.intermediate_ca_name
 
-  common_name  = "VPN Intermediate CA - ${var.cert_common_name}"
-  organization = [var.cert_organization]
-  max_ttl      = "${var.cert_validity_hours}h"
+  common_name     = "VPN Intermediate CA - ${var.cert_common_name}"
+  organization    = [var.cert_organization]
+  max_ttl         = "${var.cert_validity_hours}h"
+  signing_method  = "internal"
+  issuer          = ibm_sm_private_certificate_configuration_root_ca.root_ca.name
 
   depends_on = [ibm_sm_private_certificate_configuration_root_ca.root_ca]
 }
 
-# ── STEP 3 — Root CA signs the Intermediate CA ────────────────────────────────
-# This action submits the Intermediate CA's CSR to the Root CA for signing,
-# completing the trust chain: Root CA → Intermediate CA.
-resource "ibm_sm_private_certificate_configuration_action_sign_intermediate" "sign_intermediate" {
-  instance_id               = ibm_resource_instance.secrets_manager.guid
-  region                    = var.region
-  name                      = var.root_ca_name
-  intermediate_certificate_authority = var.intermediate_ca_name
-
-  depends_on = [ibm_sm_private_certificate_configuration_intermediate_ca.intermediate_ca]
-}
-
-# ── STEP 4 — Certificate Template ─────────────────────────────────────────────
+# ── STEP 3 — Certificate Template ─────────────────────────────────────────────
 # Defines allowed key usages and CN patterns for certs issued by the Intermediate CA.
 # Both server_flag and client_flag are enabled so one template covers both use cases.
 resource "ibm_sm_private_certificate_configuration_template" "vpn_cert_template" {
@@ -189,7 +178,7 @@ resource "ibm_sm_private_certificate_configuration_template" "vpn_cert_template"
   key_type              = "rsa"
   key_bits              = 4096
 
-  depends_on = [ibm_sm_private_certificate_configuration_action_sign_intermediate.sign_intermediate]
+  depends_on = [ibm_sm_private_certificate_configuration_intermediate_ca.intermediate_ca]
 }
 
 # ── STEP 5a — VPN Server Certificate ──────────────────────────────────────────
