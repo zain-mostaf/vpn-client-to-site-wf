@@ -78,6 +78,7 @@ resource "ibm_resource_instance" "secrets_manager" {
   service_endpoints = "public-and-private"
   parameters = {
     "service-endpoints" = "public-and-private"
+    "allowed_network"   = "public-and-private"
   }
   resource_group_id = ibm_resource_group.vpn_rg.id
   tags              = var.tags
