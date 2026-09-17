@@ -261,7 +261,8 @@ resource "ibm_is_security_group_rule" "vpn_inbound_icmp" {
   direction = "inbound"
   remote    = "0.0.0.0/0"
 
-  type = 8
+  protocol  = "icmp"
+  type      = 8
 }
 
 ###############################################################################
