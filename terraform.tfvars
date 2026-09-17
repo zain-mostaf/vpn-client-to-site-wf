@@ -52,9 +52,10 @@ cert_template_name   = "vpn-cert-template"
 ###############################################################################
 # Certificate subject fields
 ###############################################################################
-cert_common_name    = "vpn.wf.ibmcloud"
-cert_organization   = "Wells Fargo Grid-aaS"
-cert_validity_hours = 17520   # 2 years
+cert_common_name       = "vpn.wf.ibmcloud"
+cert_organization      = "Wells Fargo Grid-aaS"
+cert_ca_validity_hours = 26280   # 3 years — Root CA and Intermediate CA (must outlive leaf certs)
+cert_validity_hours    = 17520   # 2 years — leaf certs (must be less than cert_ca_validity_hours)
 
 ###############################################################################
 # 8. Security Group

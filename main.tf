@@ -138,7 +138,8 @@ resource "ibm_sm_private_certificate_configuration_root_ca" "root_ca" {
 
   common_name  = "VPN Root CA - ${var.cert_common_name}"
   organization = [var.cert_organization]
-  max_ttl      = "${var.cert_validity_hours}h"
+  # Root CA uses the longer CA validity — must outlive all certs it issues
+  max_ttl      = "${var.cert_ca_validity_hours}h"
 
   depends_on = [time_sleep.wait_for_secrets_manager]
 }
@@ -154,7 +155,8 @@ resource "ibm_sm_private_certificate_configuration_intermediate_ca" "intermediat
 
   common_name     = "VPN Intermediate CA - ${var.cert_common_name}"
   organization    = [var.cert_organization]
-  max_ttl         = "${var.cert_validity_hours}h"
+  # Intermediate CA also uses the longer CA validity — must outlive leaf certs
+  max_ttl         = "${var.cert_ca_validity_hours}h"
   signing_method  = "internal"
   issuer          = ibm_sm_private_certificate_configuration_root_ca.root_ca.name
 
@@ -164,12 +166,14 @@ resource "ibm_sm_private_certificate_configuration_intermediate_ca" "intermediat
 # ── STEP 3 — Certificate Template ─────────────────────────────────────────────
 # Defines allowed key usages and CN patterns for certs issued by the Intermediate CA.
 # Both server_flag and client_flag are enabled so one template covers both use cases.
+# max_ttl caps what leaf certs can request — set to cert_validity_hours (2 yr).
 resource "ibm_sm_private_certificate_configuration_template" "vpn_cert_template" {
   instance_id = ibm_resource_instance.secrets_manager.guid
   region      = var.region
   name        = var.cert_template_name
 
   certificate_authority = ibm_sm_private_certificate_configuration_intermediate_ca.intermediate_ca.name
+  # Template max_ttl = leaf validity — shorter than the CA TTL above
   max_ttl               = "${var.cert_validity_hours}h"
   allow_any_name        = true
   enforce_hostnames     = false
@@ -181,7 +185,7 @@ resource "ibm_sm_private_certificate_configuration_template" "vpn_cert_template"
   depends_on = [ibm_sm_private_certificate_configuration_intermediate_ca.intermediate_ca]
 }
 
-# ── STEP 5a — VPN Server Certificate ──────────────────────────────────────────
+# ── STEP 4a — VPN Server Certificate ──────────────────────────────────────────
 # Issued by the Intermediate CA via the template.
 # Used as certificate_crn on the ibm_is_vpn_server resource.
 resource "ibm_sm_private_certificate" "vpn_server_cert" {
@@ -194,6 +198,7 @@ resource "ibm_sm_private_certificate" "vpn_server_cert" {
 
   certificate_template = ibm_sm_private_certificate_configuration_template.vpn_cert_template.name
   common_name          = "vpn-server.${var.cert_common_name}"
+  # Leaf cert TTL — strictly less than the Intermediate CA TTL
   ttl                  = "${var.cert_validity_hours}h"
 
   rotation {
@@ -203,7 +208,7 @@ resource "ibm_sm_private_certificate" "vpn_server_cert" {
   depends_on = [ibm_sm_private_certificate_configuration_template.vpn_cert_template]
 }
 
-# ── STEP 5b — VPN Client CA Certificate ───────────────────────────────────────
+# ── STEP 4b — VPN Client CA Certificate ───────────────────────────────────────
 # Issued by the Intermediate CA via the template.
 # Used as client_ca_crn in the VPN server certificate authentication block.
 resource "ibm_sm_private_certificate" "vpn_client_ca_cert" {
@@ -216,6 +221,7 @@ resource "ibm_sm_private_certificate" "vpn_client_ca_cert" {
 
   certificate_template = ibm_sm_private_certificate_configuration_template.vpn_cert_template.name
   common_name          = "vpn-client-ca.${var.cert_common_name}"
+  # Leaf cert TTL — strictly less than the Intermediate CA TTL
   ttl                  = "${var.cert_validity_hours}h"
 
   rotation {

@@ -125,8 +125,14 @@ variable "cert_organization" {
   default     = "Wells Fargo Grid-aaS"
 }
 
+variable "cert_ca_validity_hours" {
+  description = "Validity period for the Root CA and Intermediate CA in hours (default 3 years = 26280 h). Must be longer than cert_validity_hours."
+  type        = number
+  default     = 26280
+}
+
 variable "cert_validity_hours" {
-  description = "Validity period for generated certificates in hours (default 2 years = 17520 h)."
+  description = "Validity period for issued leaf certificates (server cert, client CA cert) in hours (default 2 years = 17520 h). Must be shorter than cert_ca_validity_hours."
   type        = number
   default     = 17520
 }
