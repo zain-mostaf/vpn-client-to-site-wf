@@ -261,9 +261,7 @@ resource "ibm_is_security_group_rule" "vpn_inbound_icmp" {
   direction = "inbound"
   remote    = "0.0.0.0/0"
 
-  icmp {
-    type = 8
-  }
+  type = 8
 }
 
 ###############################################################################
@@ -294,7 +292,6 @@ resource "ibm_is_vpn_server" "vpn_server" {
 
   # ── Certificates (Req 6) ──────────────────────────────────────────────────
   certificate_crn = ibm_sm_imported_certificate.vpn_server_cert.crn
-  client_ca_crn   = ibm_sm_imported_certificate.vpn_client_ca_cert.crn
 
   # ── Client IP Pool (Req 3) ────────────────────────────────────────────────
   client_ip_pool = var.client_ip_pool    # 192.168.32.0/22
