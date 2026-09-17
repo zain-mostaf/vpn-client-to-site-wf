@@ -91,7 +91,7 @@ resource "ibm_resource_instance" "secrets_manager" {
 # Allow DNS propagation and Secrets Manager instance initialization
 resource "time_sleep" "wait_for_secrets_manager" {
   depends_on      = [ibm_resource_instance.secrets_manager]
-  create_duration = "120s"
+  create_duration = "300s"
 }
 
 ###############################################################################
