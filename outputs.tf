@@ -73,8 +73,8 @@ output "vpn_server_certificate_crn" {
 }
 
 output "vpn_client_ca_certificate_crn" {
-  description = "CRN of the VPN client CA private certificate stored in Secrets Manager (used as client_ca_crn on the VPN server)."
-  value       = ibm_sm_private_certificate.vpn_client_ca_cert.crn
+  description = "CRN of the VPN client CA imported certificate stored in Secrets Manager (used as client_ca_crn on the VPN server)."
+  value       = ibm_sm_imported_certificate.vpn_client_ca_cert.crn
 }
 
 output "root_ca_name" {
@@ -85,11 +85,6 @@ output "root_ca_name" {
 output "intermediate_ca_name" {
   description = "Name of the Intermediate CA configuration in the Secrets Manager Private Certificate engine."
   value       = ibm_sm_private_certificate_configuration_intermediate_ca.intermediate_ca.name
-}
-
-output "cert_template_name" {
-  description = "Name of the certificate template in the Secrets Manager Private Certificate engine."
-  value       = ibm_sm_private_certificate_configuration_template.vpn_cert_template.name
 }
 
 ###############################################################################

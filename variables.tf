@@ -103,12 +103,6 @@ variable "intermediate_ca_name" {
   default     = "vpn-intermediate-ca"
 }
 
-variable "cert_template_name" {
-  description = "Name for the certificate template in the Secrets Manager Private Certificate engine."
-  type        = string
-  default     = "vpn-cert-template"
-}
-
 ###############################################################################
 # Certificates — common subject fields
 # Override cert_common_name / cert_org if needed

@@ -47,7 +47,6 @@ secrets_manager_plan = "standard"   # "standard" or "trial"
 ###############################################################################
 root_ca_name         = "vpn-root-ca"
 intermediate_ca_name = "vpn-intermediate-ca"
-cert_template_name   = "vpn-cert-template"
 
 ###############################################################################
 # Certificate subject fields

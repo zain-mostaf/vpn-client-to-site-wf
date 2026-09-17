@@ -110,27 +110,224 @@ resource "ibm_iam_authorization_policy" "vpn_to_sm" {
 }
 
 ###############################################################################
-# 6. PKI — Private Certificate Engine (IBM Secrets Manager)
+# 6. PKI — Two-Tier Certificate Authority (tls provider + IBM Secrets Manager)
 #
-#  Secrets Manager UI:
-#    Secret Engines > Private Certificates > vpn-root-ca          (Root CA)
-#                                          > vpn-intermediate-ca  (Intermediate CA)
+#  The IBM VPN for VPC service resolves certificate_crn by walking the issuer
+#  chain via SM secret CRNs.  The Private Certificate engine stores CAs as
+#  engine *configurations*, not as addressable secrets — so the VPN service
+#  cannot follow the chain from a Private-CA-issued cert.
+#
+#  Solution: generate the entire PKI with the Terraform tls provider and store
+#  every PEM (Root CA, Intermediate CA, server cert, client CA cert) as an
+#  ibm_sm_imported_certificate secret.  Each secret has a CRN the VPN service
+#  can resolve, and the explicit chain is bundled in the 'intermediate' field.
+#
+#  UI visibility:
+#    Secret Engines > Private Certificates > vpn-root-ca         (engine config)
+#                                          > vpn-intermediate-ca (engine config)
+#    Secrets (Imported Certificates):
+#      vpn-root-ca-cert          — Root CA PEM
+#      vpn-intermediate-ca-cert  — Intermediate CA PEM + Root CA
+#      vpn-server-certificate    — server leaf + Intermediate CA + Root CA
+#      vpn-client-ca-certificate — client CA leaf + Intermediate CA + Root CA
 #
 #  Provisioning order:
-#    Step 1  ibm_sm_private_certificate_configuration_root_ca
-#              — self-signed Root CA inside SM
-#    Step 2  ibm_sm_private_certificate_configuration_intermediate_ca
-#              — Intermediate CA; signing_method="internal" + issuer=root_ca
-#                causes SM to sign it with the Root CA automatically
-#    Step 3  ibm_sm_private_certificate_configuration_template
-#              — certificate template attached to the Intermediate CA
-#    Step 4  ibm_sm_private_certificate  (x2)
-#              — issues the VPN Server cert and the VPN Client CA cert
+#    Step 1  tls_private_key / tls_self_signed_cert         — Root CA key + cert
+#    Step 2  tls_private_key / tls_locally_signed_cert      — Intermediate CA key + cert
+#    Step 3  tls_private_key / tls_locally_signed_cert (x2) — server + client CA leaf certs
+#    Step 4  ibm_sm_imported_certificate (x4)               — store all PEMs in SM
+#    Step 5  ibm_sm_private_certificate_configuration_root_ca / _intermediate_ca
+#              — register Root CA + Intermediate CA in the SM Private Cert engine
+#                (cosmetic — populates Secret Engines > Private Certificates in UI)
 ###############################################################################
 
-# ── STEP 1 — Root CA ──────────────────────────────────────────────────────────
-# Creates a self-signed Root CA inside the SM Private Certificate engine.
-# Visible in UI: Secret Engines > Private Certificates > vpn-root-ca
+# ── STEP 1 — Root CA key & self-signed certificate ───────────────────────────
+resource "tls_private_key" "root_ca_key" {
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}
+
+resource "tls_self_signed_cert" "root_ca_cert" {
+  private_key_pem   = tls_private_key.root_ca_key.private_key_pem
+  is_ca_certificate = true
+
+  subject {
+    common_name  = "VPN Root CA - ${var.cert_common_name}"
+    organization = var.cert_organization
+  }
+
+  validity_period_hours = var.cert_ca_validity_hours
+
+  allowed_uses = [
+    "cert_signing",
+    "crl_signing",
+    "digital_signature",
+  ]
+}
+
+# ── STEP 2 — Intermediate CA key & certificate signed by Root CA ──────────────
+resource "tls_private_key" "intermediate_ca_key" {
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}
+
+resource "tls_cert_request" "intermediate_ca_csr" {
+  private_key_pem = tls_private_key.intermediate_ca_key.private_key_pem
+
+  subject {
+    common_name  = "VPN Intermediate CA - ${var.cert_common_name}"
+    organization = var.cert_organization
+  }
+}
+
+resource "tls_locally_signed_cert" "intermediate_ca_cert" {
+  cert_request_pem   = tls_cert_request.intermediate_ca_csr.cert_request_pem
+  ca_private_key_pem = tls_private_key.root_ca_key.private_key_pem
+  ca_cert_pem        = tls_self_signed_cert.root_ca_cert.cert_pem
+  is_ca_certificate  = true
+
+  validity_period_hours = var.cert_ca_validity_hours
+
+  allowed_uses = [
+    "cert_signing",
+    "crl_signing",
+    "digital_signature",
+  ]
+}
+
+# ── STEP 3a — VPN Server leaf certificate signed by Intermediate CA ───────────
+resource "tls_private_key" "server_key" {
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}
+
+resource "tls_cert_request" "server_csr" {
+  private_key_pem = tls_private_key.server_key.private_key_pem
+
+  subject {
+    common_name  = "vpn-server.${var.cert_common_name}"
+    organization = var.cert_organization
+  }
+}
+
+resource "tls_locally_signed_cert" "server_cert" {
+  cert_request_pem   = tls_cert_request.server_csr.cert_request_pem
+  ca_private_key_pem = tls_private_key.intermediate_ca_key.private_key_pem
+  ca_cert_pem        = tls_locally_signed_cert.intermediate_ca_cert.cert_pem
+
+  validity_period_hours = var.cert_validity_hours
+
+  allowed_uses = [
+    "key_encipherment",
+    "digital_signature",
+    "server_auth",
+  ]
+}
+
+# ── STEP 3b — VPN Client CA leaf certificate signed by Intermediate CA ────────
+resource "tls_private_key" "client_ca_key" {
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}
+
+resource "tls_cert_request" "client_ca_csr" {
+  private_key_pem = tls_private_key.client_ca_key.private_key_pem
+
+  subject {
+    common_name  = "vpn-client-ca.${var.cert_common_name}"
+    organization = var.cert_organization
+  }
+}
+
+resource "tls_locally_signed_cert" "client_ca_cert" {
+  cert_request_pem   = tls_cert_request.client_ca_csr.cert_request_pem
+  ca_private_key_pem = tls_private_key.intermediate_ca_key.private_key_pem
+  ca_cert_pem        = tls_locally_signed_cert.intermediate_ca_cert.cert_pem
+  is_ca_certificate  = true
+
+  validity_period_hours = var.cert_validity_hours
+
+  allowed_uses = [
+    "key_encipherment",
+    "digital_signature",
+    "cert_signing",
+    "client_auth",
+  ]
+}
+
+# ── STEP 4 — Store all certificates in Secrets Manager as Imported Certs ──────
+# IBM VPN for VPC resolves certificate_crn and client_ca_crn by looking up SM
+# secret CRNs and walking the issuer chain.  All four PEMs must be stored as
+# ibm_sm_imported_certificate so the VPN service can follow the chain.
+
+# Root CA — stored so it is accessible by CRN for chain resolution
+resource "ibm_sm_imported_certificate" "root_ca_cert" {
+  instance_id     = ibm_resource_instance.secrets_manager.guid
+  region          = var.region
+  name            = "vpn-root-ca-cert"
+  description     = "VPN Root CA certificate"
+  labels          = ["vpn", "root-ca"]
+  secret_group_id = "default"
+
+  certificate = tls_self_signed_cert.root_ca_cert.cert_pem
+
+  depends_on = [time_sleep.wait_for_secrets_manager]
+}
+
+# Intermediate CA — chain: Intermediate CA cert + Root CA cert
+resource "ibm_sm_imported_certificate" "intermediate_ca_cert" {
+  instance_id     = ibm_resource_instance.secrets_manager.guid
+  region          = var.region
+  name            = "vpn-intermediate-ca-cert"
+  description     = "VPN Intermediate CA certificate"
+  labels          = ["vpn", "intermediate-ca"]
+  secret_group_id = "default"
+
+  certificate  = tls_locally_signed_cert.intermediate_ca_cert.cert_pem
+  intermediate = tls_self_signed_cert.root_ca_cert.cert_pem
+
+  depends_on = [time_sleep.wait_for_secrets_manager]
+}
+
+# VPN Server certificate — chain: server leaf + Intermediate CA + Root CA
+# certificate_crn on ibm_is_vpn_server points here.
+resource "ibm_sm_imported_certificate" "vpn_server_cert" {
+  instance_id     = ibm_resource_instance.secrets_manager.guid
+  region          = var.region
+  name            = "vpn-server-certificate"
+  description     = "VPN Server TLS certificate — full chain bundled for IBM VPN Server"
+  labels          = ["vpn", "server-cert"]
+  secret_group_id = "default"
+
+  certificate  = tls_locally_signed_cert.server_cert.cert_pem
+  private_key  = tls_private_key.server_key.private_key_pem
+  intermediate = "${tls_locally_signed_cert.intermediate_ca_cert.cert_pem}${tls_self_signed_cert.root_ca_cert.cert_pem}"
+
+  depends_on = [time_sleep.wait_for_secrets_manager]
+}
+
+# VPN Client CA certificate — chain: client CA leaf + Intermediate CA + Root CA
+# client_ca_crn on ibm_is_vpn_server points here.
+resource "ibm_sm_imported_certificate" "vpn_client_ca_cert" {
+  instance_id     = ibm_resource_instance.secrets_manager.guid
+  region          = var.region
+  name            = "vpn-client-ca-certificate"
+  description     = "VPN Client CA certificate — full chain bundled for IBM VPN Server"
+  labels          = ["vpn", "client-ca"]
+  secret_group_id = "default"
+
+  certificate  = tls_locally_signed_cert.client_ca_cert.cert_pem
+  private_key  = tls_private_key.client_ca_key.private_key_pem
+  intermediate = "${tls_locally_signed_cert.intermediate_ca_cert.cert_pem}${tls_self_signed_cert.root_ca_cert.cert_pem}"
+
+  depends_on = [time_sleep.wait_for_secrets_manager]
+}
+
+# ── STEP 5 — Register CAs in the SM Private Certificate engine (UI only) ──────
+# These engine configurations make the Root CA and Intermediate CA visible in:
+#   Secrets Manager UI > Secret Engines > Private Certificates
+# They are NOT used for cert issuance — the tls provider above handles that.
+
 resource "ibm_sm_private_certificate_configuration_root_ca" "root_ca" {
   instance_id  = ibm_resource_instance.secrets_manager.guid
   region       = var.region
@@ -138,122 +335,23 @@ resource "ibm_sm_private_certificate_configuration_root_ca" "root_ca" {
 
   common_name  = "VPN Root CA - ${var.cert_common_name}"
   organization = [var.cert_organization]
-  # Root CA uses the longer CA validity — must outlive all certs it issues
   max_ttl      = "${var.cert_ca_validity_hours}h"
 
   depends_on = [time_sleep.wait_for_secrets_manager]
 }
 
-# ── STEP 2 — Intermediate CA ──────────────────────────────────────────────────
-# signing_method = "internal" tells SM to sign the Intermediate CA CSR with the
-# Root CA named in "issuer" — no external signing action is needed.
-# Visible in UI: Secret Engines > Private Certificates > vpn-intermediate-ca
 resource "ibm_sm_private_certificate_configuration_intermediate_ca" "intermediate_ca" {
   instance_id  = ibm_resource_instance.secrets_manager.guid
   region       = var.region
   name         = var.intermediate_ca_name
 
-  common_name     = "VPN Intermediate CA - ${var.cert_common_name}"
-  organization    = [var.cert_organization]
-  # Intermediate CA also uses the longer CA validity — must outlive leaf certs
-  max_ttl         = "${var.cert_ca_validity_hours}h"
-  signing_method  = "internal"
-  issuer          = ibm_sm_private_certificate_configuration_root_ca.root_ca.name
+  common_name    = "VPN Intermediate CA - ${var.cert_common_name}"
+  organization   = [var.cert_organization]
+  max_ttl        = "${var.cert_ca_validity_hours}h"
+  signing_method = "internal"
+  issuer         = ibm_sm_private_certificate_configuration_root_ca.root_ca.name
 
   depends_on = [ibm_sm_private_certificate_configuration_root_ca.root_ca]
-}
-
-# ── STEP 3 — Certificate Template ─────────────────────────────────────────────
-# Defines allowed key usages and CN patterns for certs issued by the Intermediate CA.
-# Both server_flag and client_flag are enabled so one template covers both use cases.
-# max_ttl caps what leaf certs can request — set to cert_validity_hours (2 yr).
-resource "ibm_sm_private_certificate_configuration_template" "vpn_cert_template" {
-  instance_id = ibm_resource_instance.secrets_manager.guid
-  region      = var.region
-  name        = var.cert_template_name
-
-  certificate_authority = ibm_sm_private_certificate_configuration_intermediate_ca.intermediate_ca.name
-  # Template max_ttl = leaf validity — shorter than the CA TTL above
-  max_ttl               = "${var.cert_validity_hours}h"
-  allow_any_name        = true
-  enforce_hostnames     = false
-  server_flag           = true
-  client_flag           = true
-  key_type              = "rsa"
-  key_bits              = 4096
-
-  depends_on = [ibm_sm_private_certificate_configuration_intermediate_ca.intermediate_ca]
-}
-
-# ── STEP 4a — VPN Server Private Certificate (issued by Intermediate CA) ──────
-# The Private Certificate engine issues this cert and stores the full chain
-# (leaf + Intermediate CA + Root CA) in its attributes.
-# ttl omitted → SM uses the largest TTL that fits within the CA's remaining life.
-resource "ibm_sm_private_certificate" "vpn_server_cert_private" {
-  instance_id      = ibm_resource_instance.secrets_manager.guid
-  region           = var.region
-  name             = "vpn-server-cert-private"
-  description      = "Internal: VPN server cert issued by Private CA — re-imported as imported cert for VPN use"
-  labels           = ["vpn", "server-cert", "internal"]
-  secret_group_id  = "default"
-
-  certificate_template = ibm_sm_private_certificate_configuration_template.vpn_cert_template.name
-  common_name          = "vpn-server.${var.cert_common_name}"
-
-  rotation {
-    auto_rotate = false
-  }
-
-  depends_on = [ibm_sm_private_certificate_configuration_template.vpn_cert_template]
-}
-
-# ── STEP 4b — VPN Server Imported Certificate ─────────────────────────────────
-# The IBM VPN Server requires certificate_crn to point to an Imported Certificate.
-# It performs a full CA chain walk — so the 'intermediate' field must carry the
-# complete chain: Intermediate CA PEM + Root CA PEM.
-#
-# We take the PEM values directly from the Private Certificate resource above and
-# re-store them as an Imported Certificate, giving the VPN service the explicit
-# chain it needs.
-resource "ibm_sm_imported_certificate" "vpn_server_cert" {
-  instance_id      = ibm_resource_instance.secrets_manager.guid
-  region           = var.region
-  name             = "vpn-server-certificate"
-  description      = "VPN Server TLS certificate — full chain for IBM VPN Server"
-  labels           = ["vpn", "server-cert"]
-  secret_group_id  = "default"
-
-  # leaf certificate issued by the Intermediate CA
-  certificate  = ibm_sm_private_certificate.vpn_server_cert_private.certificate
-  # private key for the leaf certificate
-  private_key  = ibm_sm_private_certificate.vpn_server_cert_private.private_key
-  # full chain: Intermediate CA cert + Root CA cert (ca_chain is a list; join into PEM bundle)
-  intermediate = join("", ibm_sm_private_certificate.vpn_server_cert_private.ca_chain)
-
-  depends_on = [ibm_sm_private_certificate.vpn_server_cert_private]
-}
-
-# ── STEP 4c — VPN Client CA Certificate ───────────────────────────────────────
-# Issued by the Intermediate CA via the template.
-# Used as client_ca_crn — the VPN service accepts a Private Certificate here
-# because it only needs to verify client certs against it, not walk a server chain.
-# ttl omitted — SM picks the largest TTL that fits within the CA's remaining life.
-resource "ibm_sm_private_certificate" "vpn_client_ca_cert" {
-  instance_id      = ibm_resource_instance.secrets_manager.guid
-  region           = var.region
-  name             = "vpn-client-ca-certificate"
-  description      = "VPN Client CA certificate — issued by Intermediate CA"
-  labels           = ["vpn", "client-ca"]
-  secret_group_id  = "default"
-
-  certificate_template = ibm_sm_private_certificate_configuration_template.vpn_cert_template.name
-  common_name          = "vpn-client-ca.${var.cert_common_name}"
-
-  rotation {
-    auto_rotate = false
-  }
-
-  depends_on = [ibm_sm_private_certificate_configuration_template.vpn_cert_template]
 }
 
 ###############################################################################
@@ -344,7 +442,7 @@ resource "ibm_is_vpn_server" "vpn_server" {
   # username    → IBMid (UserID & Passcode / SAML federation)
   client_authentication {
     method        = "certificate"
-    client_ca_crn = ibm_sm_private_certificate.vpn_client_ca_cert.crn
+    client_ca_crn = ibm_sm_imported_certificate.vpn_client_ca_cert.crn
   }
 
   client_authentication {
@@ -368,7 +466,7 @@ resource "ibm_is_vpn_server" "vpn_server" {
   depends_on = [
     ibm_iam_authorization_policy.vpn_to_sm,
     ibm_sm_imported_certificate.vpn_server_cert,
-    ibm_sm_private_certificate.vpn_client_ca_cert,
+    ibm_sm_imported_certificate.vpn_client_ca_cert,
     ibm_is_subnet.vpn_subnet,
     ibm_is_security_group_rule.vpn_inbound_udp,
   ]
