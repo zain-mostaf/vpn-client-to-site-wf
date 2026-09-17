@@ -75,6 +75,7 @@ resource "ibm_resource_instance" "secrets_manager" {
   service           = "secrets-manager"
   plan              = var.secrets_manager_plan
   location          = var.region
+  service_endpoints = "public-and-private"
   resource_group_id = ibm_resource_group.vpn_rg.id
   tags              = var.tags
 
@@ -82,6 +83,12 @@ resource "ibm_resource_instance" "secrets_manager" {
     create = "30m"
     delete = "30m"
   }
+}
+
+# Allow DNS propagation and Secrets Manager instance initialization
+resource "time_sleep" "wait_for_secrets_manager" {
+  depends_on      = [ibm_resource_instance.secrets_manager]
+  create_duration = "60s"
 }
 
 ###############################################################################
@@ -198,6 +205,8 @@ resource "ibm_sm_imported_certificate" "vpn_server_cert" {
   certificate     = tls_locally_signed_cert.server_cert.cert_pem
   private_key     = tls_private_key.server_key.private_key_pem
   intermediate    = tls_self_signed_cert.ca_cert.cert_pem
+
+  depends_on      = [time_sleep.wait_for_secrets_manager]
 }
 
 # ── Store Client CA Certificate in Secrets Manager ──────────────────────────
@@ -211,6 +220,8 @@ resource "ibm_sm_imported_certificate" "vpn_client_ca_cert" {
   certificate     = tls_locally_signed_cert.client_ca_cert.cert_pem
   private_key     = tls_private_key.client_ca_key.private_key_pem
   intermediate    = tls_self_signed_cert.ca_cert.cert_pem
+
+  depends_on      = [time_sleep.wait_for_secrets_manager]
 }
 
 ###############################################################################
@@ -230,10 +241,9 @@ resource "ibm_is_security_group_rule" "vpn_inbound_udp" {
   direction = "inbound"
   remote    = "0.0.0.0/0"
 
-  udp {
-    port_min = var.vpn_port
-    port_max = var.vpn_port
-  }
+  protocol  = "udp"
+  port_min  = var.vpn_port
+  port_max  = var.vpn_port
 }
 
 # Inbound — TCP 443 fallback (optional but recommended for clients behind strict firewalls)
@@ -242,10 +252,9 @@ resource "ibm_is_security_group_rule" "vpn_inbound_tcp" {
   direction = "inbound"
   remote    = "0.0.0.0/0"
 
-  tcp {
-    port_min = var.vpn_port
-    port_max = var.vpn_port
-  }
+  protocol  = "tcp"
+  port_min  = var.vpn_port
+  port_max  = var.vpn_port
 }
 
 # Outbound — Allow VPN server to reach all VPC resources
