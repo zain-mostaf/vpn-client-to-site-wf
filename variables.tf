@@ -46,7 +46,7 @@ variable "vpc_name" {
 variable "vpc_address_prefix" {
   description = "Address prefix CIDR for the VPC (must NOT overlap with client_ip_pool)."
   type        = string
-  default     = "10.240.0.0/18"
+  default     = "192.0.2.0/24"
 }
 
 ###############################################################################
@@ -70,7 +70,7 @@ variable "subnet_cidrs" {
     Standalone → provide 1 CIDR.
   EOT
   type        = list(string)
-  default     = ["10.240.0.0/24", "10.240.1.0/24"]
+  default     = ["192.0.2.0/24", "10.240.1.0/24"]
 }
 
 ###############################################################################

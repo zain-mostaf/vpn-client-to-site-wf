@@ -12,29 +12,29 @@ ibmcloud_api_key = "YOUR_IBM_CLOUD_API_KEY_HERE"
 ###############################################################################
 # Region & Zones
 ###############################################################################
-region = "us-south"
+region = "us-east"
 
 # HA mode: provide 2 zones; Standalone mode: provide 1 zone
-zones = ["us-south-1", "us-south-2"]
+zones = ["us-east-1"]
 
 ###############################################################################
 # 1. Resource Group
 ###############################################################################
-resource_group_name = "vpn-rg"
+resource_group_name = "hpc_prod"
 
 ###############################################################################
 # 2. VPC
 ###############################################################################
-vpc_name           = "vpn-vpc"
-vpc_address_prefix = "10.240.0.0/18"
+vpc_name           = "wdccom-vpc-common"
+vpc_address_prefix = "192.0.2.0/24"
 
 ###############################################################################
 # 4. Subnets — HA or Standalone
 #    "ha"         → 2 subnets across 2 zones (High Availability — RECOMMENDED)
 #    "standalone" → 1 subnet in 1 zone
 ###############################################################################
-subnet_mode  = "ha"
-subnet_cidrs = ["10.240.0.0/24", "10.240.1.0/24"]
+subnet_mode  = "standalone"
+subnet_cidrs = ["192.0.2.0/24"]
 
 ###############################################################################
 # 5. IBM Secrets Manager
@@ -45,7 +45,7 @@ secrets_manager_plan = "standard"   # "standard" or "trial"
 ###############################################################################
 # 6. Certificates
 ###############################################################################
-cert_common_name    = "vpn.yourdomain.com"
+cert_common_name    = "vpn.wf.ibmcloud"
 cert_organization   = "Wells Fargo Grid-aaS"
 cert_validity_hours = 17520   # 2 years
 
@@ -54,7 +54,7 @@ cert_validity_hours = 17520   # 2 years
 ###############################################################################
 security_group_name = "vpn-server-sg"
 vpn_port            = 443
-vpn_protocol        = "udp"   # udp = recommended; tcp = fallback
+vpn_protocol        = "tcp"   # udp = recommended; tcp = fallback
 
 ###############################################################################
 # VPN Server Name
@@ -92,15 +92,11 @@ client_idle_timeout = 7200   # seconds (2 hours)
 vpn_routes = [
   {
     name        = "vpc-private-subnet-1"
-    destination = "10.240.0.0/24"
-  },
-  {
-    name        = "vpc-private-subnet-2"
-    destination = "10.240.1.0/24"
+    destination = "192.0.2.0/24"
   }
 ]
 
 ###############################################################################
 # Tags
 ###############################################################################
-tags = ["vpn", "client-to-site", "wells-fargo", "grid-aas", "terraform"]
+tags = ["vpn", "client-to-site", "wells-fargo", "grid-aas", "terraform", "Schematics"]
