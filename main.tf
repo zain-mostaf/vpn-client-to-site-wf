@@ -313,15 +313,15 @@ resource "ibm_is_vpn_server" "vpn_server" {
   client_ip_pool = var.client_ip_pool    # 192.168.32.0/22
 
   # ── Authentication (Req 7) ────────────────────────────────────────────────
-  # certificate       → mutual TLS using client certificates
-  # username_password → IBMid (UserID & Passcode / SAML federation)
+  # certificate → mutual TLS using client certificates
+  # username    → IBMid (UserID & Passcode / SAML federation)
   client_authentication {
     method            = "certificate"
     client_ca_crn     = ibm_sm_imported_certificate.vpn_client_ca_cert.crn
   }
 
   client_authentication {
-    method            = "username_password"
+    method            = "username"
     identity_provider = "iam"
   }
 

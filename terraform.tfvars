@@ -69,7 +69,7 @@ client_ip_pool = "192.168.32.0/22"
 ###############################################################################
 # 7. Authentication Methods (UserID & Passcode + Certificate)
 ###############################################################################
-client_auth_methods = ["certificate", "username_password"]
+client_auth_methods = ["certificate", "username"]
 
 ###############################################################################
 # 9. DNS Servers — IBM Cloud private DNS (required for private DNS resolution)

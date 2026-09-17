@@ -198,11 +198,11 @@ variable "vpn_routes" {
 variable "client_auth_methods" {
   description = <<-EOT
     Authentication methods for VPN clients.
-    Supported: 'certificate' and/or 'username_password' (IBMid).
+    Supported: 'certificate' and/or 'username' (IBMid).
     Provide one or both methods.
   EOT
   type        = list(string)
-  default     = ["certificate", "username_password"]
+  default     = ["certificate", "username"]
 }
 
 ###############################################################################

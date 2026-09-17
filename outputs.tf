@@ -171,7 +171,7 @@ output "client_ovpn_hint" {
     remote   = ibm_is_vpn_server.vpn_server.hostname
     port     = ibm_is_vpn_server.vpn_server.port
     protocol = ibm_is_vpn_server.vpn_server.protocol
-    auth     = "certificate + username_password (IBMid)"
+    auth     = "certificate + username (IBMid)"
     dns1     = "161.26.0.7"
     dns2     = "161.26.0.8"
   }
