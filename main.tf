@@ -185,18 +185,16 @@ resource "ibm_sm_private_certificate_configuration_template" "vpn_cert_template"
   depends_on = [ibm_sm_private_certificate_configuration_intermediate_ca.intermediate_ca]
 }
 
-# ── STEP 4a — VPN Server Certificate ──────────────────────────────────────────
-# Issued by the Intermediate CA via the template.
-# Used as certificate_crn on the ibm_is_vpn_server resource.
-# ttl is intentionally omitted: SM automatically issues the cert with the largest
-# TTL that fits within the CA's remaining validity, bounded by the template max_ttl.
-# This prevents the "notAfter beyond CA expiry" error on any subsequent apply.
-resource "ibm_sm_private_certificate" "vpn_server_cert" {
+# ── STEP 4a — VPN Server Private Certificate (issued by Intermediate CA) ──────
+# The Private Certificate engine issues this cert and stores the full chain
+# (leaf + Intermediate CA + Root CA) in its attributes.
+# ttl omitted → SM uses the largest TTL that fits within the CA's remaining life.
+resource "ibm_sm_private_certificate" "vpn_server_cert_private" {
   instance_id      = ibm_resource_instance.secrets_manager.guid
   region           = var.region
-  name             = "vpn-server-certificate"
-  description      = "VPN Server TLS certificate — issued by Intermediate CA"
-  labels           = ["vpn", "server-cert"]
+  name             = "vpn-server-cert-private"
+  description      = "Internal: VPN server cert issued by Private CA — re-imported as imported cert for VPN use"
+  labels           = ["vpn", "server-cert", "internal"]
   secret_group_id  = "default"
 
   certificate_template = ibm_sm_private_certificate_configuration_template.vpn_cert_template.name
@@ -209,10 +207,37 @@ resource "ibm_sm_private_certificate" "vpn_server_cert" {
   depends_on = [ibm_sm_private_certificate_configuration_template.vpn_cert_template]
 }
 
-# ── STEP 4b — VPN Client CA Certificate ───────────────────────────────────────
+# ── STEP 4b — VPN Server Imported Certificate ─────────────────────────────────
+# The IBM VPN Server requires certificate_crn to point to an Imported Certificate.
+# It performs a full CA chain walk — so the 'intermediate' field must carry the
+# complete chain: Intermediate CA PEM + Root CA PEM.
+#
+# We take the PEM values directly from the Private Certificate resource above and
+# re-store them as an Imported Certificate, giving the VPN service the explicit
+# chain it needs.
+resource "ibm_sm_imported_certificate" "vpn_server_cert" {
+  instance_id      = ibm_resource_instance.secrets_manager.guid
+  region           = var.region
+  name             = "vpn-server-certificate"
+  description      = "VPN Server TLS certificate — full chain for IBM VPN Server"
+  labels           = ["vpn", "server-cert"]
+  secret_group_id  = "default"
+
+  # leaf certificate issued by the Intermediate CA
+  certificate  = ibm_sm_private_certificate.vpn_server_cert_private.certificate
+  # private key for the leaf certificate
+  private_key  = ibm_sm_private_certificate.vpn_server_cert_private.private_key
+  # full chain: Intermediate CA cert + Root CA cert (ca_chain is a list; join into PEM bundle)
+  intermediate = join("", ibm_sm_private_certificate.vpn_server_cert_private.ca_chain)
+
+  depends_on = [ibm_sm_private_certificate.vpn_server_cert_private]
+}
+
+# ── STEP 4c — VPN Client CA Certificate ───────────────────────────────────────
 # Issued by the Intermediate CA via the template.
-# Used as client_ca_crn in the VPN server certificate authentication block.
-# ttl is intentionally omitted — same reason as vpn_server_cert above.
+# Used as client_ca_crn — the VPN service accepts a Private Certificate here
+# because it only needs to verify client certs against it, not walk a server chain.
+# ttl omitted — SM picks the largest TTL that fits within the CA's remaining life.
 resource "ibm_sm_private_certificate" "vpn_client_ca_cert" {
   instance_id      = ibm_resource_instance.secrets_manager.guid
   region           = var.region
@@ -308,7 +333,8 @@ resource "ibm_is_vpn_server" "vpn_server" {
   port     = var.vpn_port       # 443
 
   # ── Certificates (Req 6) ──────────────────────────────────────────────────
-  certificate_crn = ibm_sm_private_certificate.vpn_server_cert.crn
+  # Must be an Imported Certificate — the VPN service walks the full CA chain.
+  certificate_crn = ibm_sm_imported_certificate.vpn_server_cert.crn
 
   # ── Client IP Pool (Req 3) ────────────────────────────────────────────────
   client_ip_pool = var.client_ip_pool    # 192.168.32.0/22
@@ -317,8 +343,8 @@ resource "ibm_is_vpn_server" "vpn_server" {
   # certificate → mutual TLS using client certificates
   # username    → IBMid (UserID & Passcode / SAML federation)
   client_authentication {
-    method            = "certificate"
-    client_ca_crn     = ibm_sm_private_certificate.vpn_client_ca_cert.crn
+    method        = "certificate"
+    client_ca_crn = ibm_sm_private_certificate.vpn_client_ca_cert.crn
   }
 
   client_authentication {
@@ -341,7 +367,7 @@ resource "ibm_is_vpn_server" "vpn_server" {
 
   depends_on = [
     ibm_iam_authorization_policy.vpn_to_sm,
-    ibm_sm_private_certificate.vpn_server_cert,
+    ibm_sm_imported_certificate.vpn_server_cert,
     ibm_sm_private_certificate.vpn_client_ca_cert,
     ibm_is_subnet.vpn_subnet,
     ibm_is_security_group_rule.vpn_inbound_udp,

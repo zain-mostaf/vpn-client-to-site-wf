@@ -68,12 +68,12 @@ output "secrets_manager_crn" {
 # Certificates
 ###############################################################################
 output "vpn_server_certificate_crn" {
-  description = "CRN of the VPN server private certificate stored in Secrets Manager."
-  value       = ibm_sm_private_certificate.vpn_server_cert.crn
+  description = "CRN of the VPN server imported certificate stored in Secrets Manager (used as certificate_crn on the VPN server)."
+  value       = ibm_sm_imported_certificate.vpn_server_cert.crn
 }
 
 output "vpn_client_ca_certificate_crn" {
-  description = "CRN of the VPN client CA private certificate stored in Secrets Manager."
+  description = "CRN of the VPN client CA private certificate stored in Secrets Manager (used as client_ca_crn on the VPN server)."
   value       = ibm_sm_private_certificate.vpn_client_ca_cert.crn
 }
 
