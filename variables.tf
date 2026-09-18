@@ -137,7 +137,7 @@ variable "cert_validity_hours" {
 variable "security_group_name" {
   description = "Name of the security group attached to the VPN server."
   type        = string
-  default     = "vpn-server-sg"
+  default     = "wdc-vpn-server-sg"
 }
 
 variable "vpn_port" {
@@ -149,7 +149,7 @@ variable "vpn_port" {
 variable "vpn_protocol" {
   description = "Transport protocol for VPN traffic: 'udp' (recommended) or 'tcp'."
   type        = string
-  default     = "udp"
+  default     = "tcp"
 }
 
 ###############################################################################
@@ -158,7 +158,7 @@ variable "vpn_protocol" {
 variable "vpn_server_name" {
   description = "Name of the Client-to-Site VPN server."
   type        = string
-  default     = "vpn-client-to-site"
+  default     = "wdc-vpn-client-to-site"
 }
 
 variable "client_ip_pool" {
@@ -232,5 +232,5 @@ variable "client_auth_methods" {
 variable "tags" {
   description = "List of tags to attach to all provisioned resources."
   type        = list(string)
-  default     = ["vpn", "client-to-site", "wells-fargo", "grid-aas"]
+  default     = ["vpn", "client-to-site", "wells-fargo", "grid-aas", "Schematics"]
 }
