@@ -103,6 +103,12 @@ variable "intermediate_ca_name" {
   default     = "wdc-vpn-intermediate-ca"
 }
 
+variable "cert_template_name" {
+  description = "Name for the certificate template in the Secrets Manager Private Certificate engine (clears 'Certificate template required' status in UI)."
+  type        = string
+  default     = "wdc-vpn-cert-template"
+}
+
 ###############################################################################
 # Certificates — common subject fields
 # Override cert_common_name / cert_org if needed

@@ -354,6 +354,27 @@ resource "ibm_sm_private_certificate_configuration_intermediate_ca" "intermediat
   depends_on = [ibm_sm_private_certificate_configuration_root_ca.root_ca]
 }
 
+# Certificate template — satisfies "Certificate template required" status in UI.
+# Attached to the Intermediate CA engine config so the Private Certificates page
+# shows a fully-configured state.  Leaf cert issuance still goes through the
+# tls provider (Steps 3a/3b above); this template is for the SM engine UI only.
+resource "ibm_sm_private_certificate_configuration_template" "vpn_cert_template" {
+  instance_id = ibm_resource_instance.secrets_manager.guid
+  region      = var.region
+  name        = var.cert_template_name
+
+  certificate_authority = ibm_sm_private_certificate_configuration_intermediate_ca.intermediate_ca.name
+  max_ttl               = "${var.cert_validity_hours}h"
+  allow_any_name        = true
+  enforce_hostnames     = false
+  server_flag           = true
+  client_flag           = true
+  key_type              = "rsa"
+  key_bits              = 4096
+
+  depends_on = [ibm_sm_private_certificate_configuration_intermediate_ca.intermediate_ca]
+}
+
 ###############################################################################
 # 8. SECURITY GROUP
 #    Allows VPN client traffic (UDP 443) inbound and all outbound to VPC.
