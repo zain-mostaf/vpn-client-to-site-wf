@@ -13,7 +13,7 @@ variable "ibmcloud_api_key" {
 variable "region" {
   description = "IBM Cloud region where all resources are deployed (e.g. us-south, eu-gb)."
   type        = string
-  default     = "us-south"
+  default     = "us-east"
 }
 
 variable "zones" {
@@ -22,7 +22,7 @@ variable "zones" {
     Provide 2 zones for High Availability mode (2 subnets), 1 zone for Standalone mode.
   EOT
   type        = list(string)
-  default     = ["us-south-1", "us-south-2"]
+  default     = ["us-east-1"]
 }
 
 ###############################################################################
@@ -31,7 +31,7 @@ variable "zones" {
 variable "resource_group_name" {
   description = "Name of the IBM Cloud Resource Group to create and use for all resources."
   type        = string
-  default     = "vpn-rg"
+  default     = "hpc_prod"
 }
 
 ###############################################################################
@@ -40,7 +40,7 @@ variable "resource_group_name" {
 variable "vpc_name" {
   description = "Name of the Virtual Private Cloud (VPC)."
   type        = string
-  default     = "vpn-vpc"
+  default     = "wdccom-vpc-common"
 }
 
 variable "vpc_address_prefix" {
@@ -55,7 +55,7 @@ variable "vpc_address_prefix" {
 variable "subnet_mode" {
   description = "Deployment mode: 'ha' provisions 2 subnets (High Availability), 'standalone' provisions 1 subnet."
   type        = string
-  default     = "ha"
+  default     = "standalone"
 
   validation {
     condition     = contains(["ha", "standalone"], var.subnet_mode)
@@ -70,7 +70,7 @@ variable "subnet_cidrs" {
     Standalone → provide 1 CIDR.
   EOT
   type        = list(string)
-  default     = ["192.0.2.0/24", "10.240.1.0/24"]
+  default     = ["192.0.2.0/24"]
 }
 
 ###############################################################################
@@ -79,7 +79,7 @@ variable "subnet_cidrs" {
 variable "secrets_manager_name" {
   description = "Name of the IBM Cloud Secrets Manager instance."
   type        = string
-  default     = "vpn-secrets-manager"
+  default     = "common-secrets-manager"
 }
 
 variable "secrets_manager_plan" {
@@ -94,13 +94,13 @@ variable "secrets_manager_plan" {
 variable "root_ca_name" {
   description = "Name for the Root CA configuration in the Secrets Manager Private Certificate engine."
   type        = string
-  default     = "vpn-root-ca"
+  default     = "wdc-vpn-root-ca"
 }
 
 variable "intermediate_ca_name" {
   description = "Name for the Intermediate CA configuration in the Secrets Manager Private Certificate engine."
   type        = string
-  default     = "vpn-intermediate-ca"
+  default     = "wdc-vpn-intermediate-ca"
 }
 
 ###############################################################################
@@ -110,7 +110,7 @@ variable "intermediate_ca_name" {
 variable "cert_common_name" {
   description = "Common Name (CN) used in the generated TLS certificates."
   type        = string
-  default     = "vpn.example.com"
+  default     = "vpn.wf.ibmcloud"
 }
 
 variable "cert_organization" {
